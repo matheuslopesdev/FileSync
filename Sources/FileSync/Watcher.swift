@@ -214,7 +214,11 @@ final class Watcher {
             case .conflict(let path):
                 let mtime = { (root: String) in (try? fm.attributesOfItem(atPath: root + "/" + path)[.modificationDate] as? Date) ?? .distantPast }
                 let aWins = mtime(source) >= mtime(target)
-                guard keepConflictCopy((aWins ? target : source) + "/" + path) else { return false }
+
+                // Same content (e.g. one edit that reached both sides): just align the dates, no conflict copy.
+                if !fm.contentsEqual(atPath: source + "/" + path, andPath: target + "/" + path) {
+                    guard keepConflictCopy((aWins ? target : source) + "/" + path) else { return false }
+                }
                 if aWins { toB.append(path) } else { toA.append(path) }
             }
         }
@@ -249,7 +253,12 @@ final class Watcher {
 
     /// Lists one side, with ignore rules applied.
     private func list(_ root: String) -> TwoWay.Listing? {
-        rsync(["-a", "--list-only"] + filters + [root + "/"]).map(TwoWay.listing(fromRsync:))
+        guard let output = rsync(["-a", "--list-only"] + filters + [root + "/"]) else { return nil }
+        guard let listing = TwoWay.listing(fromRsync: output) else {
+            onStatus("Could not read the file list of \(root)")
+            return nil
+        }
+        return listing
     }
 
     private func copy(_ paths: [String], from: String, to: String) -> Bool {

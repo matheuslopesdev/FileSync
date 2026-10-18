@@ -16,8 +16,8 @@ precondition(Watcher.filters(fromIgnore: "# comment\n\nnode_modules/\n*.log\n!ke
 let delta = Watcher.countDelta("cd+++++++ a/\n>f+++++++ a/x.txt\n>f.st.... b.txt\n.d..t.... ./\n*deleting old/\n*deleting old/y.txt\n*deleting z.txt\n")
 precondition(delta.files == -1 && delta.folders == 0)
 
-precondition(TwoWay.listing(fromRsync: "drwxr-xr-x  128 2026/10/17 22:39:46 .\ndrwxr-xr-x   96 2026/10/17 22:39:46 sub\n-rw-r--r--    3 2026/10/17 22:39:46 sub/my file.txt\nlrwxr-xr-x    5 2026/10/17 22:39:46 ln -> other\n") ==
-    ["sub": "dir", "sub/my file.txt": "3 2026/10/17 22:39:46", "ln": "link 5"])
+precondition(TwoWay.listing(fromRsync: "drwxr-xr-x  128 2026/10/17 22:39:46 .\ndrwxr-xr-x   96 2026/10/17 22:39:46 sub\n-rw-r--r--    3 2026/10/17 22:39:46 sub/my file.txt\nlrwxr-xr-x    5 2026/10/17 22:39:46 ln -> other\n-rw-r--r--      2026/10/17 22:39:46 sub/empty note.md\n") ==
+    ["sub": "dir", "sub/my file.txt": "3 2026/10/17 22:39:46", "ln": "link 5", "sub/empty note.md": "0 2026/10/17 22:39:46"])
 
 let last: TwoWay.Listing = ["d": "dir", "d/kept": "1", "gone": "1", "edited": "1", "both": "1"]
 let a: TwoWay.Listing = ["d": "dir", "d/kept": "1", "gone": "1", "edited": "1", "both": "2", "new": "1"]
@@ -31,6 +31,8 @@ precondition(dirPlan == [.copy("d/new", toB: true), .delete("d/old", onA: true)]
 // syncs.json saved before two-way existed still loads.
 let oldJSON = #"[{"id":"9E8A1F1C-5B7E-4F0A-9C55-1D2E3F4A5B6C","source":"/a","target":"/b","createTarget":true}]"#
 precondition((try! JSONDecoder().decode([SyncItem].self, from: Data(oldJSON.utf8)))[0].twoWay == false)
+
+precondition(TwoWay.listing(fromRsync: "-rw-r--r--  1,234 2026/10/17 22:39:46 x\n") == nil, "unknown line fails closed")
 
 // No snapshot (first run) never deletes.
 precondition(TwoWay.plan(a: ["x": "1"], b: ["y": "1", "x": "2"], last: [:]) == [.conflict("x"), .copy("y", toB: false)])
@@ -55,6 +57,8 @@ precondition(!fm.fileExists(atPath: A + "/a.txt"), "delete propagates")
 w(A + "/b.txt", "old", ago: 100); w(B + "/b.txt", "new"); pass(); pass()
 precondition(r(A + "/b.txt") == "new" && r(B + "/b.txt") == "new", "newest wins")
 precondition(r(A + "/b (conflict).txt") == "old" && r(B + "/b (conflict).txt") == "old", "conflict copy kept on both")
+w(A + "/b.txt", "same", ago: 100); w(B + "/b.txt", "same"); pass()
+precondition(!fm.fileExists(atPath: A + "/b (conflict 2).txt") && !fm.fileExists(atPath: B + "/b (conflict 2).txt"), "same content is no conflict")
 try! fm.removeItem(atPath: B + "/d"); w(A + "/d/new.txt", "n", ago: -5); pass(); pass()
 precondition(r(B + "/d/new.txt") == "n" && !fm.fileExists(atPath: A + "/d/x.txt"), "folder delete vs new file")
 for f in try! fm.contentsOfDirectory(atPath: B) { try! fm.removeItem(atPath: B + "/" + f) }

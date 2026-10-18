@@ -11,23 +11,28 @@ enum TwoWay {
         case conflict(String)
     }
 
-    /// Parses `rsync -a --list-only` output.
-    static func listing(fromRsync output: String) -> Listing {
+    // "<perms> <size> <date> <time> <path>"; openrsync leaves the size blank for empty files.
+    private static let entry = try! NSRegularExpression(pattern: #"^(\S)\S*\s+(\d*)\s+(\d{4}/\d\d/\d\d \d\d:\d\d:\d\d) (.+)$"#)
+
+    /// Parses `rsync -a --list-only` output; nil on any unknown line, since a skipped file would look deleted.
+    static func listing(fromRsync output: String) -> Listing? {
         var result = Listing()
-        for line in output.split(whereSeparator: \.isNewline) {
-            let parts = line.split(separator: " ", maxSplits: 4, omittingEmptySubsequences: true)
-            guard parts.count == 5, parts[4] != "." else { continue }
-            var path = String(parts[4])
-            switch parts[0].first {
+        for line in output.split(whereSeparator: \.isNewline).map(String.init) {
+            guard let m = entry.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) else { return nil }
+            let field = { (i: Int) in String(line[Range(m.range(at: i), in: line)!]) }
+            var path = field(4)
+            let size = field(2).isEmpty ? "0" : field(2)
+            guard path != "." else { continue }
+            switch field(1) {
             case "d":
                 result[path] = "dir"
             case "l":
                 if let arrow = path.range(of: " -> ") { path = String(path[..<arrow.lowerBound]) }
 
                 // Symlink mtimes aren't reliably preserved, so compare size only.
-                result[path] = "link \(parts[1])"
+                result[path] = "link \(size)"
             default:
-                result[path] = "\(parts[1]) \(parts[2]) \(parts[3])"
+                result[path] = "\(size) \(field(3))"
             }
         }
         return result
