@@ -57,12 +57,31 @@ struct MainView: View {
     @State private var adding = false
 
     var body: some View {
+        TabView {
+            Tab("Syncs", systemImage: "arrow.left.and.right") { syncList }
+            Tab("Ignore", systemImage: "eye.slash") { IgnoreView(store: store) }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if !store.message.isEmpty {
+                Text(store.message).font(.caption).foregroundStyle(.secondary).padding(6)
+            }
+        }
+        .toolbar {
+            Button { adding = true } label: { Image(systemName: "plus") }
+                .help("Add sync")
+                .disabled(store.loadFailed)
+        }
+        .sheet(isPresented: $adding) { AddSyncView(store: store) }
+        .frame(minWidth: 560, minHeight: 320)
+    }
+
+    private var syncList: some View {
         List(store.syncs) { item in
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.source).lineLimit(1).truncationMode(.middle)
-                    Text("→ " + item.target).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
-                    Text(store.status[item.id] ?? "Waiting…").font(.caption).foregroundStyle(.tertiary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(Text("Source").foregroundStyle(.secondary))  \(item.source)").lineLimit(1).truncationMode(.middle)
+                    Text("\(Text("Target").foregroundStyle(.secondary))  \(item.target)").lineLimit(1).truncationMode(.middle)
+                    Text(details(item)).font(.caption).foregroundStyle(.tertiary)
                 }
                 Spacer()
                 Button { store.syncNow(item) } label: { Image(systemName: "arrow.clockwise") }
@@ -78,18 +97,38 @@ struct MainView: View {
                 ContentUnavailableView("No Syncs", systemImage: "arrow.left.and.right", description: Text("Click + to add a folder sync."))
             }
         }
-        .safeAreaInset(edge: .bottom) {
-            if !store.message.isEmpty {
-                Text(store.message).font(.caption).foregroundStyle(.secondary).padding(6)
+    }
+
+    private func details(_ item: SyncItem) -> String {
+        let status = store.status[item.id] ?? "Waiting…"
+        guard let counts = store.counts[item.id] else { return status }
+        return "\(counts.files.formatted()) files · \(counts.folders.formatted()) folders · \(status)"
+    }
+}
+
+struct IgnoreView: View {
+    let store: Store
+    @State private var text = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("One pattern per line, like .gitignore. Applies to every sync. `#` comment, `!` re-include, leading `/` anchors to the source folder, trailing `/` matches folders only.")
+                .font(.caption).foregroundStyle(.secondary)
+            TextEditor(text: $text)
+                .font(.body.monospaced())
+                .scrollContentBackground(.hidden)
+                .padding(4)
+                .background(.background.secondary, in: .rect(cornerRadius: 6))
+            HStack {
+                Text("Ignored files already in a target are left there.").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Save") { store.saveIgnore(text) }
+                    .keyboardShortcut("s")
+                    .disabled(text == store.ignoreText)
             }
         }
-        .toolbar {
-            Button { adding = true } label: { Image(systemName: "plus") }
-                .help("Add sync")
-                .disabled(store.loadFailed)
-        }
-        .sheet(isPresented: $adding) { AddSyncView(store: store) }
-        .frame(minWidth: 520, minHeight: 300)
+        .padding()
+        .onAppear { text = store.ignoreText }
     }
 }
 

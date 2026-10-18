@@ -13,13 +13,17 @@ struct SyncItem: Codable, Identifiable, Hashable {
 final class Store {
     var syncs: [SyncItem] = []
     var status: [UUID: String] = [:]
+    var counts: [UUID: Counts] = [:]
+    var ignoreText = ""
     var message = ""
     var loadFailed = false
     private var watchers: [UUID: Watcher] = [:]
     private let configDir = URL.libraryDirectory.appending(path: "Mobile Documents/com~apple~CloudDocs/File Sync")
     private var configURL: URL { configDir.appending(path: "syncs.json") }
+    private var ignoreURL: URL { configDir.appending(path: "ignore.txt") }
 
     init() {
+        ignoreText = (try? String(contentsOf: ignoreURL, encoding: .utf8)) ?? ""
         if FileManager.default.fileExists(atPath: configURL.path) {
             do {
                 syncs = try JSONDecoder().decode([SyncItem].self, from: Data(contentsOf: configURL))
@@ -42,12 +46,27 @@ final class Store {
         Watcher.forget(item)
         syncs.removeAll { $0.id == item.id }
         status[item.id] = nil
+        counts[item.id] = nil
         save()
     }
 
     func syncNow(_ item: SyncItem) { watchers[item.id]?.syncAll() }
 
     func syncAll() { watchers.values.forEach { $0.syncAll() } }
+
+    /// Saves ignore.txt to iCloud and re-runs every sync with the new rules.
+    func saveIgnore(_ text: String) {
+        do {
+            try FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
+            try text.write(to: ignoreURL, atomically: true, encoding: .utf8)
+        } catch {
+            message = "Save failed: \(error.localizedDescription)"
+            return
+        }
+        ignoreText = text
+        let filters = Watcher.filters(fromIgnore: text)
+        watchers.values.forEach { $0.syncAll(filters: filters) }
+    }
 
     /// Rejects pairs where rsync --delete could wipe the source or loop forever.
     nonisolated static func problem(source: String, target: String) -> String? {
@@ -59,8 +78,10 @@ final class Store {
 
     private func watch(_ item: SyncItem) {
         let id = item.id
-        watchers[id] = Watcher(item: item) { text in
+        watchers[id] = Watcher(item: item, filters: Watcher.filters(fromIgnore: ignoreText)) { text in
             Task { @MainActor [weak self] in self?.status[id] = text }
+        } onCounts: { counts in
+            Task { @MainActor [weak self] in self?.counts[id] = counts }
         }
     }
 
