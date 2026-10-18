@@ -20,9 +20,10 @@ struct FileSyncApp: App {
     }
 }
 
+// Template image: macOS tints it to match the menu bar.
 private let menuIcon: NSImage = {
-    let image = (NSImage(named: "AppIcon")?.copy() as? NSImage) ?? NSImage(systemSymbolName: "arrow.left.and.right", accessibilityDescription: "File Sync")!
-    image.size = NSSize(width: 18, height: 18)
+    let image = NSImage(systemSymbolName: "arrow.left.and.right", accessibilityDescription: "File Sync")!.withSymbolConfiguration(.init(pointSize: 17, weight: .bold))!
+    image.isTemplate = true
     return image
 }()
 
@@ -137,7 +138,8 @@ struct AddSyncView: View {
 
     private func folderField(_ title: String, text: Binding<String>) -> some View {
         HStack {
-            TextField(title, text: text, prompt: Text("/path/to/folder"))
+            Text(title).frame(width: 50, alignment: .leading)
+            TextField(title, text: text, prompt: Text("\(title) folder path"))
             Button("Choose…") {
                 let panel = NSOpenPanel()
                 panel.canChooseFiles = false

@@ -8,7 +8,7 @@ struct SyncItem: Codable, Identifiable, Hashable {
     var createTarget: Bool
 }
 
-/// Owns the sync list, persists it to syncs.json next to the app, and commits it to git.
+/// Owns the sync list and persists it to syncs.json in iCloud Drive.
 @MainActor @Observable
 final class Store {
     var syncs: [SyncItem] = []
@@ -16,9 +16,8 @@ final class Store {
     var message = ""
     var loadFailed = false
     private var watchers: [UUID: Watcher] = [:]
-    private let repo = Bundle.main.bundleURL.deletingLastPathComponent()
-    private let gitQueue = DispatchQueue(label: "FileSync.git", qos: .utility)
-    private var configURL: URL { repo.appending(path: "syncs.json") }
+    private let configDir = URL.libraryDirectory.appending(path: "Mobile Documents/com~apple~CloudDocs/File Sync")
+    private var configURL: URL { configDir.appending(path: "syncs.json") }
 
     init() {
         if FileManager.default.fileExists(atPath: configURL.path) {
@@ -35,7 +34,7 @@ final class Store {
     func add(_ item: SyncItem) {
         syncs.append(item)
         watch(item)
-        save("Add sync \(item.source) -> \(item.target)")
+        save()
     }
 
     func remove(_ item: SyncItem) {
@@ -43,7 +42,7 @@ final class Store {
         Watcher.forget(item)
         syncs.removeAll { $0.id == item.id }
         status[item.id] = nil
-        save("Remove sync \(item.source) -> \(item.target)")
+        save()
     }
 
     func syncNow(_ item: SyncItem) { watchers[item.id]?.syncAll() }
@@ -65,47 +64,15 @@ final class Store {
         }
     }
 
-    private func save(_ commitMessage: String) {
+    private func save() {
         do {
+            try FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             try encoder.encode(syncs).write(to: configURL, options: .atomic)
+            message = ""
         } catch {
             message = "Save failed: \(error.localizedDescription)"
-            return
         }
-
-        let repo = repo.path
-        gitQueue.async {
-            var result = "Saved and committed"
-            do {
-                try Self.git(repo, "add", "syncs.json")
-                try Self.git(repo, "commit", "-m", commitMessage, "--", "syncs.json")
-                if try !Self.git(repo, "remote").isEmpty {
-                    try Self.git(repo, "push", "-u", "origin", "HEAD")
-                    result = "Saved, committed and pushed"
-                }
-            } catch {
-                result = "Git: \(error.localizedDescription)"
-            }
-            Task { @MainActor [weak self] in self?.message = result }
-        }
-    }
-
-    @discardableResult
-    nonisolated private static func git(_ repo: String, _ args: String...) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = ["-C", repo] + args
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        try process.run()
-        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            throw NSError(domain: "git", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: output])
-        }
-        return output
     }
 }
