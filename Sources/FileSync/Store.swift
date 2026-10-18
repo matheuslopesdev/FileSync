@@ -6,6 +6,20 @@ struct SyncItem: Codable, Identifiable, Hashable {
     var source: String
     var target: String
     var createTarget: Bool
+    var twoWay = false
+}
+
+// In an extension to keep the memberwise init.
+extension SyncItem {
+    /// Tolerates syncs.json files saved before `twoWay` existed.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        source = try c.decode(String.self, forKey: .source)
+        target = try c.decode(String.self, forKey: .target)
+        createTarget = try c.decode(Bool.self, forKey: .createTarget)
+        twoWay = try c.decodeIfPresent(Bool.self, forKey: .twoWay) ?? false
+    }
 }
 
 /// Owns the sync list and persists it to syncs.json in iCloud Drive.

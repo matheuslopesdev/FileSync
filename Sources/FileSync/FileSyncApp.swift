@@ -79,8 +79,7 @@ struct MainView: View {
         List(store.syncs) { item in
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("\(Text("Source").foregroundStyle(.secondary))  \(item.source)").lineLimit(1).truncationMode(.middle)
-                    Text("\(Text("Target").foregroundStyle(.secondary))  \(item.target)").lineLimit(1).truncationMode(.middle)
+                    Text("\(item.source) \(Text(item.twoWay ? "↔" : "→").foregroundStyle(.secondary)) \(item.target)").lineLimit(1).truncationMode(.middle)
                     Text(details(item)).font(.caption).foregroundStyle(.tertiary)
                 }
                 Spacer()
@@ -138,6 +137,7 @@ struct AddSyncView: View {
     @State private var source = ""
     @State private var target = ""
     @State private var createTarget = true
+    @State private var twoWay = false
 
     private var sourcePath: String { (source as NSString).expandingTildeInPath }
     private var targetPath: String { (target as NSString).expandingTildeInPath }
@@ -155,7 +155,9 @@ struct AddSyncView: View {
             folderField("Source", text: $source)
             folderField("Target", text: $target)
             Toggle("Create target folder if it doesn't exist", isOn: $createTarget)
-            Label("Target becomes a mirror: files not in the source are deleted from it.", systemImage: "exclamationmark.triangle")
+            Toggle("Two-way sync", isOn: $twoWay)
+            Label(twoWay ? "Changes and deletions on either side are copied to the other. Conflicts keep both versions."
+                         : "Target becomes a mirror: files not in the source are deleted from it.", systemImage: "exclamationmark.triangle")
                 .font(.caption).foregroundStyle(.orange)
             if let problem {
                 Text(problem).font(.caption).foregroundStyle(.red)
@@ -164,7 +166,7 @@ struct AddSyncView: View {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Add") {
-                    store.add(SyncItem(source: sourcePath, target: targetPath, createTarget: createTarget))
+                    store.add(SyncItem(source: sourcePath, target: targetPath, createTarget: createTarget, twoWay: twoWay))
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
